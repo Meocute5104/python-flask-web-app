@@ -38,14 +38,18 @@ def list_objects(bucket_name):
             # Chỉ lấy Key (tên file) và Size
             objects = [{'Key': obj['Key'], 'Size': obj['Size']} for obj in objects]
 
-        return render_template('index.html', 
-                               buckets=buckets, 
-                               current_bucket=bucket_name, 
-                               objects=objects, 
-                               object_content=None)
+        return render_template('index.html',
+                               buckets=buckets,
+                               current_bucket=bucket_name,
+                               objects=objects,
+                               object_content=None,
+                               # THÊM CÁC BIẾN NÀY VÀO ĐÂY:
+                               object_content_type=None, # Khi liệt kê, không có nội dung cụ thể
+                               is_text_file=None,        # Khi liệt kê, không xác định loại file cụ thể
+                               current_object_key=None   # Khi liệt kê, không có object nào đang được xem
+                               )
     except Exception as e:
         return render_template('error.html', error=f"Lỗi khi liệt kê các object trong bucket '{bucket_name}': {e}")
-
 # Route để hiển thị nội dung của một Object
 @app.route('/bucket/<bucket_name>/show/<path:object_key>')
 def show_object_content(bucket_name, object_key):
