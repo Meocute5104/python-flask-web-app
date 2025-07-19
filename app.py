@@ -1,18 +1,22 @@
-from flask import Flask, render_template, request, redirect, url_for, send_file
 import boto3
 import os
+from flask import Flask, render_template, request, redirect, url_for, send_file
 from werkzeug.utils import secure_filename
+from datetime import datetime # Thêm import này để lấy thời gian hiện tại
 
 app = Flask(__name__)
-# Định cấu hình thư mục cho các file được upload tạm thời
-UPLOAD_FOLDER = '/tmp' # Sử dụng thư mục tạm thời
+UPLOAD_FOLDER = '/tmp'
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024 # Giới hạn 16MB cho file upload
 
 # Khởi tạo client S3
-# Boto3 sẽ tự động tìm kiếm thông tin xác thực từ IAM Role (khuyến nghị)
-# hoặc biến môi trường, hoặc file ~/.aws/credentials
 s3 = boto3.client('s3')
+
+# KHỞI TẠO DYNAMODB RESOURCE
+dynamodb = boto3.resource('dynamodb')
+# Đặt tên bảng DynamoDB của bạn
+dynamodb_table_name = 'common-dynamodb' # Thay thế bằng tên bảng bạn đã tạo
+table = dynamodb.Table(dynamodb_table_name)
 
 # Route chính: Liệt kê các Bucket và hiển thị form chọn Bucket
 @app.route('/')
@@ -116,18 +120,36 @@ def upload_object(bucket_name):
     try:
         if 'file' not in request.files:
             return redirect(url_for('list_objects', bucket_name=bucket_name))
-        
+
         file = request.files['file']
         if file.filename == '':
             return redirect(url_for('list_objects', bucket_name=bucket_name))
-        
+
         if file:
             filename = secure_filename(file.filename)
+
+            # UPLOAD FILE LÊN S3
             s3.upload_fileobj(file, bucket_name, filename)
+
+            # SAU KHI UPLOAD THÀNH CÔNG, LƯU THÔNG TIN VÀO DYNAMODB
+            try:
+                upload_time = datetime.utcnow().isoformat() + 'Z' # Định dạng ISO 8601 UTC
+                item = {
+                    'objectKey': filename,
+                    'bucketName': bucket_name,
+                    'uploadTime': upload_time
+                    # Bạn có thể thêm các trường khác nếu muốn, ví dụ: 'fileSize': file.content_length
+                }
+                table.put_item(Item=item)
+                print(f"Đã ghi thông tin file '{filename}' vào DynamoDB.")
+            except Exception as db_e:
+                print(f"Lỗi khi ghi vào DynamoDB: {db_e}")
+                # Bạn có thể muốn xử lý lỗi này tốt hơn, ví dụ: log nó hoặc hiển thị thông báo
+                # Nhưng không ngăn cản việc chuyển hướng lại ứng dụng.
+
             return redirect(url_for('list_objects', bucket_name=bucket_name))
     except Exception as e:
         return render_template('error.html', error=f"Lỗi khi upload file lên bucket '{bucket_name}': {e}")
-
 # Route lỗi chung (nếu bạn muốn hiển thị lỗi một cách đẹp hơn)
 @app.errorhandler(404)
 def page_not_found(e):
