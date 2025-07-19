@@ -50,10 +50,26 @@ def list_objects(bucket_name):
 @app.route('/bucket/<bucket_name>/show/<path:object_key>')
 def show_object_content(bucket_name, object_key):
     try:
-        obj = s3.get_object(Bucket=bucket_name, Key=object_key)
-        # Đọc nội dung file, giới hạn kích thước để tránh tải file lớn vào RAM
-        content = obj['Body'].read(1024 * 1024 * 1).decode('utf-8', errors='ignore') # Đọc tối đa 1MB, bỏ qua lỗi encoding
-        
+        obj_metadata = s3.head_object(Bucket=bucket_name, Key=object_key) # Lấy metadata để có ContentType
+        content_type = obj_metadata.get('ContentType', 'application/octet-stream')
+
+        # Kiểm tra nếu là file văn bản
+        if content_type.startswith(('text/', 'application/json', 'application/xml')) or \
+           'charset' in content_type: # Các loại file text thường có charset
+            obj = s3.get_object(Bucket=bucket_name, Key=object_key)
+            content = obj['Body'].read(1024 * 1024 * 1).decode('utf-8', errors='ignore') # Đọc tối đa 1MB
+            is_text_file = True
+        elif content_type.startswith('image/'):
+            # Đối với hình ảnh, chúng ta sẽ không đọc nội dung mà gửi URL về để hiển thị
+            # Cần một URL công khai hoặc pre-signed URL.
+            # Để đơn giản, ở đây ta sẽ chỉ cho phép download hoặc chuyển hướng người dùng đến URL của S3 object
+            # (nếu bucket của bạn là public hoặc bạn tạo pre-signed URL)
+            is_text_file = False
+            content = None # Không đọc nội dung nhị phân
+        else: # Các loại file khác (PDF, video, binary...)
+            is_text_file = False
+            content = None # Không đọc nội dung nhị phân
+            
         response = s3.list_buckets()
         buckets = [bucket['Name'] for bucket in response['Buckets']]
         objects_response = s3.list_objects_v2(Bucket=bucket_name)
@@ -63,11 +79,14 @@ def show_object_content(bucket_name, object_key):
                                buckets=buckets, 
                                current_bucket=bucket_name, 
                                objects=objects, 
-                               object_content=content, 
-                               current_object_key=object_key)
+                               object_content=content, # Truyền nội dung (chỉ cho file text)
+                               current_object_key=object_key,
+                               is_text_file=is_text_file, # Biến flag để template biết là file text hay không
+                               object_content_type=content_type # Truyền Content-Type
+                               )
     except Exception as e:
         return render_template('error.html', error=f"Lỗi khi hiển thị nội dung object '{object_key}': {e}")
-
+    
 # Route để Download một Object
 @app.route('/bucket/<bucket_name>/download/<path:object_key>')
 def download_object(bucket_name, object_key):

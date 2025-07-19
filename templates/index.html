@@ -1,169 +1,309 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AWS S3 Browser</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <style>
+        :root {
+            --primary-color: #007bff;
+            --primary-dark: #0056b3;
+            --secondary-color: #6c757d;
+            --background-light: #f8f9fa;
+            --card-background: #ffffff;
+            --border-color: #dee2e6;
+            --shadow: rgba(0, 0, 0, 0.1);
+            --text-color: #343a40;
+            --header-color: #495057;
+        }
+
         body {
-            font-family: Arial, sans-serif;
-            margin: 20px;
-            background-color: #f4f4f4;
-            color: #333;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: var(--background-light);
+            color: var(--text-color);
+            line-height: 1.6;
         }
 
         .container {
-            max-width: 900px;
+            max-width: 960px;
             margin: auto;
-            background: #fff;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            background: var(--card-background);
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 12px var(--shadow);
         }
 
-        h1,
+        h1 {
+            color: var(--primary-dark);
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            border-bottom: 2px solid var(--border-color);
+            padding-bottom: 15px;
+        }
+
         h2 {
-            color: #0056b3;
+            color: var(--header-color);
+            margin-top: 25px;
+            margin-bottom: 15px;
+            font-size: 1.8em;
         }
 
+        .section-card {
+            background-color: var(--card-background);
+            border: 1px solid var(--border-color);
+            padding: 20px;
+            margin-bottom: 25px;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+        }
+
+        /* Form Controls */
         select,
         input[type="file"],
         input[type="submit"],
         button {
-            padding: 10px;
+            padding: 10px 15px;
             margin-bottom: 10px;
-            border-radius: 4px;
-            border: 1px solid #ddd;
-            display: inline-block;
+            border-radius: 5px;
+            border: 1px solid var(--border-color);
+            font-size: 1em;
+            transition: all 0.3s ease;
             cursor: pointer;
         }
 
         select {
             width: 100%;
-            max-width: 300px;
+            max-width: 400px;
+            background-color: white;
+            appearance: none; /* Loại bỏ mũi tên mặc định trên select */
+            background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23007bff%22%20d%3D%22M287%2069.9a14.7%2014.7%200%2000-20.7%200L146.2%20190.9%2026.1%2069.9a14.7%2014.7%200%2000-20.7%2020.7L135.8%20230.1c5.9%205.9%2015.5%205.9%2021.4%200L287%2090.6a14.7%2014.7%200%20000-20.7z%22%2F%3E%3C%2Fsvg%3E');
+            background-repeat: no-repeat;
+            background-position: right 10px center;
+            background-size: 12px;
         }
 
         input[type="submit"],
         button {
-            background-color: #007bff;
+            background-color: var(--primary-color);
             color: white;
             border: none;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
         }
 
         input[type="submit"]:hover,
         button:hover {
-            background-color: #0056b3;
+            background-color: var(--primary-dark);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
         }
 
-        .bucket-section,
-        .objects-section,
-        .upload-section,
-        .object-content-section {
-            border: 1px solid #eee;
-            padding: 15px;
-            margin-bottom: 20px;
-            border-radius: 8px;
-            background-color: #fafafa;
+        button i, input[type="submit"] i {
+            margin-right: 5px;
         }
 
+        /* List Styles */
         ul {
             list-style-type: none;
             padding: 0;
+            margin: 0;
         }
 
         li {
-            background: #e9e9e9;
-            margin-bottom: 5px;
-            padding: 10px;
-            border-radius: 4px;
+            background: var(--background-light);
+            margin-bottom: 8px;
+            padding: 12px 15px;
+            border-radius: 6px;
             display: flex;
+            flex-wrap: wrap; /* Cho phép xuống dòng trên màn hình nhỏ */
             justify-content: space-between;
             align-items: center;
+            border: 1px solid #e0e0e0;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
         }
 
-        li button {
-            margin-left: 10px;
-            padding: 5px 10px;
-            font-size: 0.9em;
+        li .file-info {
+            flex-grow: 1;
+            margin-right: 10px;
+            word-break: break-all; /* Ngắt từ dài */
         }
 
+        li .file-actions {
+            display: flex;
+            gap: 8px; /* Khoảng cách giữa các nút */
+            margin-top: 5px; /* Khoảng cách khi xuống dòng */
+        }
+
+        li .file-actions button {
+            margin-bottom: 0; /* Loại bỏ margin-bottom mặc định */
+        }
+
+        /* Object Content */
         pre {
-            background-color: #e0e0e0;
-            padding: 10px;
-            border-radius: 4px;
+            background-color: #e9ecef;
+            padding: 15px;
+            border-radius: 6px;
             overflow-x: auto;
             white-space: pre-wrap;
             word-wrap: break-word;
+            border: 1px solid var(--border-color);
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.9em;
         }
 
+        /* Links */
         a {
             text-decoration: none;
-            color: #007bff;
+            color: var(--primary-color);
+            transition: color 0.3s ease;
         }
 
         a:hover {
+            color: var(--primary-dark);
             text-decoration: underline;
+        }
+
+        /* Upload Section Specifics */
+        .upload-section form {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .upload-section input[type="file"] {
+            width: auto; /* Để không chiếm hết chiều rộng */
+        }
+        .upload-section input[type="submit"] {
+            align-self: flex-start; /* Nút submit nằm ở đầu */
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 768px) {
+            .container {
+                padding: 15px;
+            }
+            h1 {
+                font-size: 2em;
+            }
+            h2 {
+                font-size: 1.5em;
+            }
+            li {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            li .file-actions {
+                width: 100%; /* Đảm bảo các nút chiếm toàn bộ chiều rộng khi xuống dòng */
+                justify-content: flex-end; /* Căn phải các nút */
+            }
+        }
+
+        /* Loading Spinner */
+        .loading-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.7);
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .spinner {
+            border: 8px solid #f3f3f3;
+            border-top: 8px solid var(--primary-color);
+            border-radius: 50%;
+            width: 60px;
+            height: 60px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
         }
     </style>
 </head>
-
 <body>
-    <div class="container">
-        <h1>AWS S3 Browser</h1>
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="spinner"></div>
+    </div>
 
-        <div class="bucket-section">
-            <h2>Chọn Bucket</h2>
+    <div class="container">
+        <h1><i class="fas fa-cloud"></i> AWS S3 Browser</h1>
+
+        <div class="section-card bucket-section">
+            <h2><i class="fas fa-hdd"></i> Chọn Bucket</h2>
             <form action="{{ url_for('list_objects', bucket_name='_') }}" method="get" id="bucket_form">
-                <select name="bucket_name"
-                    onchange="document.getElementById('bucket_form').action = '/bucket/' + this.value; document.getElementById('bucket_form').submit();">
+                <select name="bucket_name" onchange="showLoading(); document.getElementById('bucket_form').action = '/bucket/' + this.value; document.getElementById('bucket_form').submit();">
                     <option value="">-- Chọn một Bucket --</option>
                     {% for bucket in buckets %}
-                    <option value="{{ bucket }}" {% if bucket==current_bucket %}selected{% endif %}>{{ bucket }}
-                    </option>
+                        <option value="{{ bucket }}" {% if bucket == current_bucket %}selected{% endif %}>{{ bucket }}</option>
                     {% endfor %}
                 </select>
             </form>
         </div>
 
         {% if current_bucket %}
-        <div class="objects-section">
-            <h2>Các File trong Bucket: {{ current_bucket }}</h2>
-            <a href="{{ url_for('index') }}">Quay lại danh sách Bucket</a>
-            <ul>
-                {% if objects %}
-                {% for obj in objects %}
-                <li>
-                    <span>{{ obj.Key }} (Kích thước: {{ "%.2f"|format(obj.Size / 1024 / 1024) }} MB)</span>
-                    <div>
-                        <button onclick="window.location.href=&quot;{{ url_for('show_object_content', bucket_name=current_bucket, object_key=obj.Key) }}&quot;">Xem nội dung</button>
-                        <button onclick="window.location.href=&quot;{{ url_for('download_object', bucket_name=current_bucket, object_key=obj.Key) }}&quot;">Tải xuống</button>
-                    </div>
-                </li>
-                {% endfor %}
-                {% else %}
-                <li>Bucket này không có file nào.</li>
-                {% endif %}
-            </ul>
-        </div>
+            <div class="section-card objects-section">
+                <h2><i class="fas fa-folder-open"></i> Các File trong Bucket: {{ current_bucket }}</h2>
+                <p><a href="{{ url_for('index') }}"><i class="fas fa-arrow-left"></i> Quay lại danh sách Bucket</a></p>
+                <ul>
+                    {% if objects %}
+                        {% for obj in objects %}
+                            <li>
+                                <span class="file-info">
+                                    <i class="fas fa-file"></i> {{ obj.Key }} (Kích thước: {{ "%.2f"|format(obj.Size / 1024 / 1024) }} MB)
+                                </span>
+                                <div class="file-actions">
+                                    <button onclick="showLoading(); window.location.href='{{ url_for('show_object_content', bucket_name=current_bucket, object_key=obj.Key) }}'">
+                                        <i class="fas fa-eye"></i> Xem nội dung
+                                    </button>
+                                    <button onclick="showLoading(); window.location.href='{{ url_for('download_object', bucket_name=current_bucket, object_key=obj.Key) }}'">
+                                        <i class="fas fa-download"></i> Tải xuống
+                                    </button>
+                                </div>
+                            </li>
+                        {% endfor %}
+                    {% else %}
+                        <li><i class="fas fa-info-circle"></i> Bucket này không có file nào.</li>
+                    {% endif %}
+                </ul>
+            </div>
 
-        {% if object_content is not none %}
-        <div class="object-content-section">
-            <h2>Nội dung của File: {{ current_object_key }}</h2>
-            <pre>{{ object_content }}</pre>
-        </div>
-        {% endif %}
+            {% if object_content is not none or object_content_type is not none %}
+                <div class="section-card object-content-section">
+                    <h2><i class="fas fa-clipboard-list"></i> Nội dung của File: {{ current_object_key }}</h2>
+                    {% if is_text_file %}
+                        <pre>{{ object_content }}</pre>
+                    {% elif object_content_type.startswith('image/') %}
+                        <p><i class="fas fa-image"></i> Đây là file ảnh. Bạn có thể <a href="{{ url_for('download_object', bucket_name=current_bucket, object_key=current_object_key) }}"><i class="fas fa-download"></i> tải xuống</a> để xem, hoặc <a href="https://{{ current_bucket }}.s3.amazonaws.com/{{ current_object_key }}" target="_blank"><i class="fas fa-external-link-alt"></i> xem trực tiếp trên S3 (yêu cầu bucket là Public)</a></p>
+                        {# <img src="https://{{ current_bucket }}.s3.amazonaws.com/{{ current_object_key }}" alt="S3 Image" style="max-width:100%; border-radius: 6px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);"> #}
+                    {% else %}
+                        <p><i class="fas fa-exclamation-triangle"></i> File này có định dạng: <strong>{{ object_content_type }}</strong>. Ứng dụng không hỗ trợ hiển thị trực tiếp loại file này.</p>
+                        <p>Vui lòng <a href="{{ url_for('download_object', bucket_name=current_bucket, object_key=current_object_key) }}"><i class="fas fa-download"></i> tải xuống</a> để xem.</p>
+                    {% endif %}
+                </div>
+            {% endif %}
 
-        <div class="upload-section">
-            <h2>Upload File mới vào Bucket: {{ current_bucket }}</h2>
-            <form action="{{ url_for('upload_object', bucket_name=current_bucket) }}" method="post"
-                enctype="multipart/form-data">
-                <input type="file" name="file" required>
-                <input type="submit" value="Upload File">
-            </form>
-        </div>
+            <div class="section-card upload-section">
+                <h2><i class="fas fa-upload"></i> Upload File mới vào Bucket: {{ current_bucket }}</h2>
+                <form action="{{ url_for('upload_object', bucket_name=current_bucket) }}" method="post" enctype="multipart/form-data" onsubmit="showLoading()">
+                    <input type="file" name="file" required>
+                    <input type="submit" value="Upload File">
+                </form>
+            </div>
         {% endif %}
     </div>
-</body>
 
+    <script>
+        function showLoading() {
+            document.getElementById('loadingOverlay').style.display = 'flex';
+        }
+    </script>
+</body>
 </html>
