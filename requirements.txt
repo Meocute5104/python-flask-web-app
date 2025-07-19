@@ -1,0 +1,3 @@
+Flask
+boto3
+gunicorn # Web Server Gateway Interface (WSGI) server cho production
