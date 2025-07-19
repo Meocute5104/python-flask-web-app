@@ -1,65 +1,116 @@
-from flask import Flask, render_template, request, redirect, url_for
+from flask import Flask, render_template, request, redirect, url_for, send_file
 import boto3
 import os
-import uuid # Để tạo ID duy nhất cho item DynamoDB và tên file S3
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
+# Định cấu hình thư mục cho các file được upload tạm thời
+UPLOAD_FOLDER = '/tmp' # Sử dụng thư mục tạm thời
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024 # Giới hạn 16MB cho file upload
 
-# Cấu hình AWS SDK
-# Boto3 sẽ tự động lấy credentials từ IAM Role của EC2 Instance
-# nếu được gắn đúng cách. Không cần Access Key/Secret Key ở đây.
-s3_client = boto3.client('s3', region_name=os.environ.get('AWS_REGION', 'ap-southeast-1'))
-dynamodb_client = boto3.resource('dynamodb', region_name=os.environ.get('AWS_REGION', 'ap-southeast-1'))
+# Khởi tạo client S3
+# Boto3 sẽ tự động tìm kiếm thông tin xác thực từ IAM Role (khuyến nghị)
+# hoặc biến môi trường, hoặc file ~/.aws/credentials
+s3 = boto3.client('s3')
 
-# Đặt tên Bucket S3 và Table DynamoDB của bạn ở đây
-# Có thể dùng biến môi trường để quản lý tốt hơn trong production
-S3_BUCKET_NAME = os.environ.get('S3_BUCKET_NAME', 'your-unique-s3-bucket-name-12345') # THAY THẾ TÊN NÀY!
-DYNAMODB_TABLE_NAME = os.environ.get('DYNAMODB_TABLE_NAME', 'MyWebAppDataTable') # THAY THẾ TÊN NÀY!
-
+# Route chính: Liệt kê các Bucket và hiển thị form chọn Bucket
 @app.route('/')
 def index():
-    return render_template('index.html')
+    try:
+        response = s3.list_buckets()
+        buckets = [bucket['Name'] for bucket in response['Buckets']]
+        return render_template('index.html', buckets=buckets, current_bucket=None, objects=[], object_content=None)
+    except Exception as e:
+        return render_template('error.html', error=f"Lỗi khi liệt kê các bucket: {e}")
 
-@app.route('/submit', methods=['POST'])
-def submit():
-    if request.method == 'POST':
-        user_name = request.form.get('user_name')
-        message = request.form.get('message')
+# Route để liệt kê các Object trong một Bucket đã chọn
+@app.route('/bucket/<bucket_name>')
+def list_objects(bucket_name):
+    try:
+        response = s3.list_buckets()
+        buckets = [bucket['Name'] for bucket in response['Buckets']]
 
-        if not user_name or not message:
-            return render_template('index.html', error="Vui lòng điền đầy đủ thông tin.")
+        objects_response = s3.list_objects_v2(Bucket=bucket_name)
+        objects = []
+        if 'Contents' in objects_response:
+            objects = objects_response['Contents']
+            # Chỉ lấy Key (tên file) và Size
+            objects = [{'Key': obj['Key'], 'Size': obj['Size']} for obj in objects]
 
-        item_id = str(uuid.uuid4()) # Tạo ID duy nhất
+        return render_template('index.html', 
+                               buckets=buckets, 
+                               current_bucket=bucket_name, 
+                               objects=objects, 
+                               object_content=None)
+    except Exception as e:
+        return render_template('error.html', error=f"Lỗi khi liệt kê các object trong bucket '{bucket_name}': {e}")
 
-        try:
-            # 1. Lưu dữ liệu vào DynamoDB
-            table = dynamodb_client.Table(DYNAMODB_TABLE_NAME)
-            table.put_item(
-                Item={
-                    'id': item_id,
-                    'UserName': user_name,
-                    'Message': message,
-                    'Timestamp': boto3.util.current_time_millis()
-                }
-            )
-            print(f"Dữ liệu đã được lưu vào DynamoDB: {item_id}")
+# Route để hiển thị nội dung của một Object
+@app.route('/bucket/<bucket_name>/show/<path:object_key>')
+def show_object_content(bucket_name, object_key):
+    try:
+        obj = s3.get_object(Bucket=bucket_name, Key=object_key)
+        # Đọc nội dung file, giới hạn kích thước để tránh tải file lớn vào RAM
+        content = obj['Body'].read(1024 * 1024 * 1).decode('utf-8', errors='ignore') # Đọc tối đa 1MB, bỏ qua lỗi encoding
+        
+        response = s3.list_buckets()
+        buckets = [bucket['Name'] for bucket in response['Buckets']]
+        objects_response = s3.list_objects_v2(Bucket=bucket_name)
+        objects = [{'Key': obj_item['Key'], 'Size': obj_item['Size']} for obj_item in objects_response.get('Contents', [])]
 
-            # 2. Tải lên "file" (nội dung message) lên S3
-            s3_file_key = f"messages/{item_id}.txt"
-            s3_client.put_object(
-                Bucket=S3_BUCKET_NAME,
-                Key=s3_file_key,
-                Body=f"User: {user_name}\nMessage: {message}"
-            )
-            print(f"File đã được tải lên S3: {s3_file_key}")
+        return render_template('index.html', 
+                               buckets=buckets, 
+                               current_bucket=bucket_name, 
+                               objects=objects, 
+                               object_content=content, 
+                               current_object_key=object_key)
+    except Exception as e:
+        return render_template('error.html', error=f"Lỗi khi hiển thị nội dung object '{object_key}': {e}")
 
-            return render_template('index.html', success="Dữ liệu và file đã được xử lý thành công!")
+# Route để Download một Object
+@app.route('/bucket/<bucket_name>/download/<path:object_key>')
+def download_object(bucket_name, object_key):
+    try:
+        file_obj = s3.get_object(Bucket=bucket_name, Key=object_key)
+        
+        # Tạo một file tạm thời để lưu nội dung trước khi gửi
+        temp_file_path = os.path.join(app.config['UPLOAD_FOLDER'], secure_filename(os.path.basename(object_key)))
+        with open(temp_file_path, 'wb') as f:
+            f.write(file_obj['Body'].read())
+        
+        return send_file(temp_file_path, as_attachment=True, download_name=os.path.basename(object_key))
+    except Exception as e:
+        return render_template('error.html', error=f"Lỗi khi download object '{object_key}': {e}")
+    finally:
+        # Xóa file tạm thời sau khi gửi đi (đảm bảo an toàn)
+        if 'temp_file_path' in locals() and os.path.exists(temp_file_path):
+            os.remove(temp_file_path)
 
-        except Exception as e:
-            print(f"Lỗi khi xử lý: {e}")
-            return render_template('index.html', error=f"Đã xảy ra lỗi: {e}")
+# Route để Upload một Object mới
+@app.route('/bucket/<bucket_name>/upload', methods=['POST'])
+def upload_object(bucket_name):
+    try:
+        if 'file' not in request.files:
+            return redirect(url_for('list_objects', bucket_name=bucket_name))
+        
+        file = request.files['file']
+        if file.filename == '':
+            return redirect(url_for('list_objects', bucket_name=bucket_name))
+        
+        if file:
+            filename = secure_filename(file.filename)
+            s3.upload_fileobj(file, bucket_name, filename)
+            return redirect(url_for('list_objects', bucket_name=bucket_name))
+    except Exception as e:
+        return render_template('error.html', error=f"Lỗi khi upload file lên bucket '{bucket_name}': {e}")
+
+# Route lỗi chung (nếu bạn muốn hiển thị lỗi một cách đẹp hơn)
+@app.errorhandler(404)
+def page_not_found(e):
+    return render_template('404.html'), 404
 
 if __name__ == '__main__':
-    # Chạy Flask ở chế độ debug để dễ phát triển,
-    # nhưng KHÔNG BAO GIỜ dùng debug=True trong môi trường production!
-    app.run(debug=True, host='0.0.0.0', port=5000) # Listen trên tất cả các interface
+    # Lưu ý: Không nên chạy app.run() trực tiếp trong production.
+    # Gunicorn sẽ quản lý việc chạy Flask app.
+    app.run(debug=True, host='0.0.0.0', port=5000)
